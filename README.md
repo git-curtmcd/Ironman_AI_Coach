@@ -1,27 +1,34 @@
-Ironman AI Coach — Strava + n8n + Postgres + Ollama + Slack
+# Ironman AI Coach — Strava + n8n + Postgres + Ollama + Slack
 
 An automated endurance-coaching workflow that listens for new Strava activities, stores structured workout data in Postgres, compares the new workout against recent training history, asks a local Ollama model for a short coach read, saves the recommendation, and posts the result to Slack.
 
 This project is built to show a practical, low-cost example of agentic AI: the system reacts to a real-world event, gathers context from a database, uses an LLM to make a recommendation, and sends the answer where the athlete already works.
 
-Important: This is coaching guidance, not medical advice. Use your own judgment and adjust based on how you feel.
+> **Important:** This is coaching guidance, not medical advice. Use your own judgment and adjust based on how you feel.
 
-What this workflow does
+---
+
+## What this workflow does
 
 When a new Strava activity is created, the workflow:
 
-Receives the activity from the Strava Trigger.
-Cleans the raw Strava payload into normalized workout fields.
-Upserts the workout into a workouts table in Postgres.
-Pulls the last 28 days of training history.
-Pulls the most recent similar workouts by sport.
-Pulls tomorrow's planned training session from a weekly template table.
-Builds a compact context object for the AI coach.
-Sends that context to a local Ollama chat model.
-Formats the AI response for Slack.
-Saves the coach recommendation to Postgres.
-Posts the coach check-in to a Slack channel.
-Architecture
+1. Receives the activity from the Strava Trigger.
+2. Cleans the raw Strava payload into normalized workout fields.
+3. Upserts the workout into a `workouts` table in Postgres.
+4. Pulls the last 28 days of training history.
+5. Pulls the most recent similar workouts by sport.
+6. Pulls tomorrow's planned training session from a weekly template table.
+7. Builds a compact context object for the AI coach.
+8. Sends that context to a local Ollama chat model.
+9. Formats the AI response for Slack.
+10. Saves the coach recommendation to Postgres.
+11. Posts the coach check-in to a Slack channel.
+
+---
+
+## Architecture
+
+```text
 Strava
   |
   v
@@ -56,41 +63,65 @@ Postgres - Save Recommendation
   |
   v
 Slack
-Tech stack
-n8n — workflow automation
-Strava API — workout trigger/data source
-Postgres — workout history and recommendations database
-Ollama — local LLM runtime
-Qwen 2.5 Coder 3B — local model used by the workflow
-Slack — coach message delivery
-Prerequisites
+```
+
+---
+
+## Tech stack
+
+- **n8n** — workflow automation
+- **Strava API** — workout trigger/data source
+- **Postgres** — workout history and recommendations database
+- **Ollama** — local LLM runtime
+- **Qwen 2.5 Coder 3B** — local model used by the workflow
+- **Slack** — coach message delivery
+
+---
+
+## Prerequisites
 
 You need:
 
-A machine or VM that can run Docker
-Docker and Docker Compose
-A Strava account
-A Slack workspace where you can create an app or bot
-Basic command-line comfort
-A GitHub account if you plan to publish this repo
+- A machine or VM that can run Docker
+- Docker and Docker Compose
+- A Strava account
+- A Slack workspace where you can create an app or bot
+- Basic command-line comfort
+- A GitHub account if you plan to publish this repo
 
 Recommended VM size:
 
-2+ CPU cores
-4 GB RAM minimum
-8 GB RAM recommended if running Ollama locally
-20+ GB disk
-Step 1 — Clone the repo
+- 2+ CPU cores
+- 4 GB RAM minimum
+- 8 GB RAM recommended if running Ollama locally
+- 20+ GB disk
+
+---
+
+## Step 1 — Clone the repo
+
+```bash
 git clone https://github.com/YOUR_USERNAME/ironman-ai-coach.git
 cd ironman-ai-coach
-Step 2 — Create the project folders
+```
+
+---
+
+## Step 2 — Create the project folders
+
+```bash
 mkdir -p ./n8n-data
 mkdir -p ./postgres-data
 mkdir -p ./ollama-data
-Step 3 — Create a Docker Compose file
+```
 
-Create docker-compose.yml:
+---
 
+## Step 3 — Create a Docker Compose file
+
+Create `docker-compose.yml`:
+
+```yaml
 services:
   n8n:
     image: n8nio/n8n:latest
@@ -137,10 +168,15 @@ services:
       - "11434:11434"
     volumes:
       - ./ollama-data:/root/.ollama
-Step 4 — Create your .env file
+```
 
-Create .env:
+---
 
+## Step 4 — Create your `.env` file
+
+Create `.env`:
+
+```bash
 N8N_HOST=localhost
 N8N_PROTOCOL=http
 WEBHOOK_URL=http://localhost:5678/
@@ -150,42 +186,67 @@ N8N_ENCRYPTION_KEY=change-this-to-a-long-random-string
 POSTGRES_DB=ironman_coach
 POSTGRES_USER=ironman_user
 POSTGRES_PASSWORD=change-this-password
+```
 
 Generate a strong encryption key:
 
+```bash
 openssl rand -hex 32
+```
 
-Use that value for N8N_ENCRYPTION_KEY.
+Use that value for `N8N_ENCRYPTION_KEY`.
 
-Do not commit your .env file to GitHub.
+Do not commit your `.env` file to GitHub.
 
-Step 5 — Start the stack
+---
+
+## Step 5 — Start the stack
+
+```bash
 docker compose up -d
+```
 
 Check that everything started:
 
+```bash
 docker ps
+```
 
 Open n8n:
 
+```text
 http://localhost:5678
-Step 6 — Pull the Ollama model
+```
 
-The workflow uses qwen2.5-coder:3b.
+---
 
+## Step 6 — Pull the Ollama model
+
+The workflow uses `qwen2.5-coder:3b`.
+
+```bash
 docker exec -it ollama ollama pull qwen2.5-coder:3b
+```
 
 Test it:
 
+```bash
 docker exec -it ollama ollama run qwen2.5-coder:3b
-Step 7 — Create the Postgres tables
+```
+
+---
+
+## Step 7 — Create the Postgres tables
 
 Connect to Postgres:
 
+```bash
 docker exec -it postgres psql -U ironman_user -d ironman_coach
+```
 
 Run this SQL:
 
+```sql
 CREATE TABLE IF NOT EXISTS workouts (
   id BIGSERIAL PRIMARY KEY,
   source TEXT NOT NULL DEFAULT 'strava',
@@ -234,9 +295,11 @@ CREATE TABLE IF NOT EXISTS weekly_training_template (
   planned_focus TEXT NOT NULL,
   description TEXT
 );
+```
 
 Insert a starter weekly training plan:
 
+```sql
 INSERT INTO weekly_training_template
 (day_of_week, planned_sport, planned_focus, description)
 VALUES
@@ -252,111 +315,151 @@ DO UPDATE SET
   planned_sport = EXCLUDED.planned_sport,
   planned_focus = EXCLUDED.planned_focus,
   description = EXCLUDED.description;
+```
 
 Exit Postgres:
 
+```sql
 \q
-Step 8 — Create a Slack app
+```
+
+---
+
+## Step 8 — Create a Slack app
 
 Go to the Slack API dashboard and create a new app for your workspace.
 
 Add the bot permissions your workflow needs:
 
+```text
 chat:write
 channels:read
 groups:read
+```
 
 Install the app to your workspace.
 
 Copy the bot token. It usually starts with:
 
+```text
 xoxb-
+```
 
 You will paste this into n8n as a Slack credential. Do not put this token in GitHub.
 
-Step 9 — Create a Strava API app
+---
+
+## Step 9 — Create a Strava API app
 
 Go to your Strava API settings and create an application.
 
 You will need:
 
-Client ID
-Client Secret
-OAuth redirect/callback URL
+- Client ID
+- Client Secret
+- OAuth redirect/callback URL
 
 When using n8n locally, your callback URL may look like:
 
+```text
 http://localhost:5678/rest/oauth2-credential/callback
+```
 
 When using a public domain or Cloudflare Tunnel, it may look like:
 
+```text
 https://your-domain.example.com/rest/oauth2-credential/callback
+```
 
 The exact callback URL must match what n8n shows in the Strava credential setup screen.
 
 Do not commit your Strava client secret to GitHub.
 
-Step 10 — Import the n8n workflow
+---
+
+## Step 10 — Import the n8n workflow
 
 In n8n:
 
-Go to Workflows.
-Select Import from File.
-Upload the exported workflow JSON.
-Open the imported workflow.
-Reconnect each credential:
-Strava OAuth2 credential
-Postgres credential
-Slack API credential
-Ollama API credential
+1. Go to **Workflows**.
+2. Select **Import from File**.
+3. Upload the exported workflow JSON.
+4. Open the imported workflow.
+5. Reconnect each credential:
+   - Strava OAuth2 credential
+   - Postgres credential
+   - Slack API credential
+   - Ollama API credential
 
 The workflow JSON should not contain your real credentials. n8n exports usually reference credential names and IDs, but you still need to create credentials inside your own n8n instance.
 
-Step 11 — Configure the Ollama credential in n8n
+---
+
+## Step 11 — Configure the Ollama credential in n8n
 
 If n8n and Ollama are running in the same Docker Compose network, use:
 
+```text
 http://ollama:11434
+```
 
 If n8n is running outside Docker and Ollama is exposed locally, use:
 
+```text
 http://localhost:11434
+```
 
 Model name:
 
+```text
 qwen2.5-coder:3b
-Step 12 — Configure the Postgres credential in n8n
+```
+
+---
+
+## Step 12 — Configure the Postgres credential in n8n
 
 If n8n and Postgres are running in the same Docker Compose network:
 
+```text
 Host: postgres
 Port: 5432
 Database: ironman_coach
 User: ironman_user
 Password: your password from .env
-Step 13 — Configure Slack output
+```
 
-Open the Slack - Send Coach Message node.
+---
+
+## Step 13 — Configure Slack output
+
+Open the `Slack - Send Coach Message` node.
 
 Set the channel where you want the AI coach messages to go.
 
 Test the node with a simple message before activating the whole workflow.
 
-Step 14 — Test the workflow
+---
+
+## Step 14 — Test the workflow
 
 Before activating it fully:
 
-Confirm Postgres is reachable from n8n.
-Confirm Ollama responds from n8n.
-Confirm Slack can send a test message.
-Confirm the Strava credential connects.
-Run a manual workflow test if you have sample Strava activity data.
+1. Confirm Postgres is reachable from n8n.
+2. Confirm Ollama responds from n8n.
+3. Confirm Slack can send a test message.
+4. Confirm the Strava credential connects.
+5. Run a manual workflow test if you have sample Strava activity data.
 
 Once everything works, activate the workflow.
 
 The workflow triggers when a new Strava activity is created.
 
-Example Slack output
+---
+
+## Example Slack output
+
+```text
 🏊‍♂️🚴‍♂️🏃 Ironman Coach Check-In
 
 Workout Summary
@@ -373,3 +476,6 @@ Follow the planned bike endurance session, but keep it mostly easy if your legs 
 
 One Thing to Watch
 Pay attention to heart rate drift during the next session.
+```
+
+---
