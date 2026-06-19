@@ -1,0 +1,81 @@
+# ==========================================
+# AI / Machine Learning Specifics
+# ==========================================
+# Large datasets and raw data
+data/
+*.csv
+*.jsonl
+*.parquet
+*.h5
+*.pkl
+*.pickle
+
+# Model checkpoints, weights, and embeddings
+models/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.bin
+*.pb
+*.tflite
+weights/
+
+# Large Language Model / Vector DB cache
+.cache/
+.chroma/
+.faiss/
+pinecone/
+
+# Hugging Face & Ollama caches (if local)
+.huggingface/
+.ollama/
+
+# ==========================================
+# Environments & Dependencies
+# ==========================================
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+artifacts/
+
+# Jupyter Notebook checkpoints and autosaves
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+*.ipynb_checkpoints
+
+# Package management
+__pycache__/
+*.py[cod]
+*$py.class
+.poetry/
+pydantic_settings/
+
+# ==========================================
+# VS Code & OS Specifics
+# ==========================================
+# VS Code local settings and workspace configurations
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Security & Credentials (CRITICAL)
+# ==========================================
+# Environment variables containing API keys (OpenAI, Anthropic, HuggingFace, etc.)
+.env
+.env.local
+.env.*
+!.env.example
+secrets.yaml
+credentials.json
