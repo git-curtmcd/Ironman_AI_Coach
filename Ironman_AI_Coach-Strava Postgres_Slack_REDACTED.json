@@ -1,0 +1,366 @@
+{
+  "name": "Ironman AI Coach - Strava Postgres Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\n\n// Strava trigger sometimes gives webhook shell + object_data\n// Your data shows the useful activity is inside object_data\nconst activity = input.object_data || input;\n\n// Helpers\nfunction num(value) {\n  if (value === undefined || value === null || value === '' || value === 'null') {\n    return null;\n  }\n  const n = Number(value);\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction str(value) {\n  if (value === undefined || value === null || value === '' || value === 'null') {\n    return null;\n  }\n  return String(value);\n}\n\nfunction milesFromMeters(meters) {\n  const m = num(meters);\n  return m === null ? null : Number((m / 1609.344).toFixed(2));\n}\n\nfunction minutesFromSeconds(seconds) {\n  const s = num(seconds);\n  return s === null ? null : Number((s / 60).toFixed(2));\n}\n\nfunction pacePerMile(distanceMeters, movingSeconds) {\n  const miles = milesFromMeters(distanceMeters);\n  const seconds = num(movingSeconds);\n\n  if (!miles || !seconds) return null;\n\n  const secPerMile = seconds / miles;\n  const min = Math.floor(secPerMile / 60);\n  const sec = Math.round(secPerMile % 60).toString().padStart(2, '0');\n\n  return `${min}:${sec}/mi`;\n}\n\nfunction elevationFeet(meters) {\n  const m = num(meters);\n  return m === null ? null : Number((m * 3.28084).toFixed(0));\n}\n\nconst cleaned = {\n  source: 'strava',\n\n  source_activity_id: str(activity.id || input.object_id),\n\n  start_time: str(activity.start_date_local || activity.start_date),\n\n  sport: str(activity.sport_type || activity.type),\n  sub_sport: str(activity.workout_type),\n  workout_name: str(activity.name),\n\n  distance_miles: milesFromMeters(activity.distance),\n  duration_minutes: minutesFromSeconds(activity.moving_time || activity.elapsed_time),\n  pace_per_mile: pacePerMile(activity.distance, activity.moving_time || activity.elapsed_time),\n\n  avg_heart_rate: num(activity.average_heartrate),\n  max_heart_rate: num(activity.max_heartrate),\n  avg_power: num(activity.average_watts),\n  calories: num(activity.calories),\n  elevation_gain_feet: elevationFeet(activity.total_elevation_gain),\n\n  training_load: num(activity.suffer_score),\n  effort_label: 'unknown',\n\n  raw_json: input\n};\n\nreturn [\n  {\n    json: cleaned\n  }\n];"
+      },
+      "id": "REDACTED",
+      "name": "Clean Workout Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO workouts (\n  source,\n  source_activity_id,\n  start_time,\n  sport,\n  sub_sport,\n  workout_name,\n  distance_miles,\n  duration_minutes,\n  pace_per_mile,\n  avg_heart_rate,\n  max_heart_rate,\n  avg_power,\n  calories,\n  elevation_gain_feet,\n  training_load,\n  effort_label,\n  raw_json,\n  updated_at\n)\nVALUES (\n  '{{ $json.source }}',\n  '{{ $json.source_activity_id }}',\n  {{ $json.start_time ? \"'\" + $json.start_time + \"'::timestamp\" : \"NULL\" }},\n  {{ $json.sport ? \"'\" + $json.sport + \"'\" : \"NULL\" }},\n  {{ $json.sub_sport ? \"'\" + $json.sub_sport + \"'\" : \"NULL\" }},\n  {{ $json.workout_name ? \"'\" + $json.workout_name.replaceAll(\"'\", \"''\") + \"'\" : \"NULL\" }},\n  {{ $json.distance_miles ?? \"NULL\" }},\n  {{ $json.duration_minutes ?? \"NULL\" }},\n  {{ $json.pace_per_mile ? \"'\" + $json.pace_per_mile + \"'\" : \"NULL\" }},\n  {{ $json.avg_heart_rate ?? \"NULL\" }},\n  {{ $json.max_heart_rate ?? \"NULL\" }},\n  {{ $json.avg_power ?? \"NULL\" }},\n  {{ $json.calories ?? \"NULL\" }},\n  {{ $json.elevation_gain_feet ?? \"NULL\" }},\n  {{ $json.training_load ?? \"NULL\" }},\n  '{{ $json.effort_label || \"unknown\" }}',\n  '{{ JSON.stringify($json.raw_json).replaceAll(\"'\", \"''\") }}'::jsonb,\n  NOW()\n)\nON CONFLICT (source_activity_id)\nDO UPDATE SET\n  start_time = EXCLUDED.start_time,\n  sport = EXCLUDED.sport,\n  sub_sport = EXCLUDED.sub_sport,\n  workout_name = EXCLUDED.workout_name,\n  distance_miles = EXCLUDED.distance_miles,\n  duration_minutes = EXCLUDED.duration_minutes,\n  pace_per_mile = EXCLUDED.pace_per_mile,\n  avg_heart_rate = EXCLUDED.avg_heart_rate,\n  max_heart_rate = EXCLUDED.max_heart_rate,\n  avg_power = EXCLUDED.avg_power,\n  calories = EXCLUDED.calories,\n  elevation_gain_feet = EXCLUDED.elevation_gain_feet,\n  training_load = EXCLUDED.training_load,\n  effort_label = EXCLUDED.effort_label,\n  raw_json = EXCLUDED.raw_json,\n  updated_at = NOW()\nRETURNING id, source_activity_id;",
+        "options": {}
+      },
+      "id": "REDACTED",
+      "name": "Postgres - Upsert Workout",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1344,
+        1120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT start_time, sport, sub_sport, workout_name, distance_miles, duration_minutes, pace_per_mile, avg_heart_rate, max_heart_rate, avg_power, calories, elevation_gain_feet, training_load, effort_label\nFROM workouts\nWHERE start_time >= NOW() - INTERVAL '28 days'\nORDER BY start_time DESC;",
+        "options": {}
+      },
+      "id": "REDACTED",
+      "name": "Postgres - Last 28 Days",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1568,
+        1120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  start_time,\n  sport,\n  sub_sport,\n  workout_name,\n  distance_miles,\n  duration_minutes,\n  pace_per_mile,\n  avg_heart_rate,\n  max_heart_rate,\n  avg_power,\n  training_load,\n  effort_label\nFROM workouts\nWHERE sport = '{{ $(\"Clean Workout Data\").first().json.sport }}'\nORDER BY start_time DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "REDACTED",
+      "name": "Postgres - Similar Workouts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        1120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT day_of_week, planned_sport, planned_focus, description\nFROM weekly_training_template\nWHERE day_of_week = TRIM(TO_CHAR((CURRENT_DATE + INTERVAL '1 day'), 'Day'));",
+        "options": {}
+      },
+      "id": "REDACTED",
+      "name": "Postgres - Tomorrow Plan",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        752,
+        1344
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const newestWorkout = $node[\"Clean Workout Data\"].json;\nconst recentHistory = $items(\"Postgres - Last 28 Days\").map(i => i.json);\nconst similarWorkouts = $items(\"Postgres - Similar Workouts\").map(i => i.json);\nconst tomorrowPlan = $items(\"Postgres - Tomorrow Plan\").map(i => i.json)[0] || {\n  day_of_week: null,\n  planned_sport: \"unknown\",\n  planned_focus: \"unknown\",\n  description: \"No plan found for tomorrow.\"\n};\n\nconst last7Days = recentHistory.filter(w => {\n  if (!w.start_time) return false;\n  return new Date(w.start_time).getTime() >= Date.now() - 7 * 24 * 60 * 60 * 1000;\n});\n\nconst load7 = last7Days.reduce((sum, w) => sum + Number(w.training_load || 0), 0);\nconst load28 = recentHistory.reduce((sum, w) => sum + Number(w.training_load || 0), 0);\n\nreturn [{\n  json: {\n    newest_workout: newestWorkout,\n    recent_similar_workouts: similarWorkouts.slice(0, 5),\n    tomorrow_plan: tomorrowPlan,\n    simple_metrics: {\n      workouts_last_7_days: last7Days.length,\n      training_load_last_7_days: +load7.toFixed(1),\n      training_load_last_28_days: +load28.toFixed(1)\n    }\n  }\n}];"
+      },
+      "id": "REDACTED",
+      "name": "Prepare AI Coach Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "==You are Curt's Ironman endurance coach.\n\nYou must output ONLY Slack mrkdwn.\nDo not write code.\nDo not explain your reasoning.\nDo not mention JSON.\nDo not mention parsing.\nDo not add extra commentary.\nDo not use markdown code blocks.\n\nUse exactly this format:\n\n🏊‍♂️🚴‍♂️🏃 *Ironman Coach Check-In*\n\n*Workout Summary*\n[1-3 sentences about the newest workout.]\n\n*Trend*\n[Compare to recent similar workouts. If there is not enough data, say that.]\n\n*Coach Read*\n[Easy, moderate, hard, or unknown. Mention fatigue/load concerns only if obvious.]\n\n*Tomorrow's Recommendation*\n[Recommend the next workout based on tomorrow_plan.]\n\n*One Thing to Watch*\n[One simple thing Curt should watch next workout.]\n\nCurt is training for an Ironman. His normal weekly rhythm:\n- Monday: run\n- Tuesday: bike\n- Wednesday: swim\n- Thursday: long run\n- Friday: swim\n- Saturday: long bike\n- Sunday: recovery, rest, or optional easy session\n\nDecision rules:\n- If recent training load looks high, recommend an easier version of tomorrow's workout.\n- If today's workout was hard and tomorrow is bike/swim, keep tomorrow mostly easy.\n- If tomorrow is before the long run or long bike, avoid unnecessary intensity.\n- If there is not enough data, give a conservative recommendation.\n- Do not recommend skipping a key workout unless there is a clear fatigue/load concern.\n\nHere is the structured data:\nNewest workout:\n{{ JSON.stringify($json.newest_workout, null, 2) }}\n\nRecent similar workouts:\n{{ JSON.stringify($json.recent_similar_workouts, null, 2) }}\n\nTomorrow plan:\n{{ JSON.stringify($json.tomorrow_plan, null, 2) }}\n\nSimple metrics:\n{{ JSON.stringify($json.simple_metrics, null, 2) }}",
+        "options": {}
+      },
+      "id": "REDACTED",
+      "name": "AI Coach Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1200,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiOutput = $json.output || $json.text || $json.response || 'No coach response generated.';\nconst workout = $node[\"Clean Workout Data\"].json;\n\nconst slackText = `${aiOutput}\\n\\n_This is coaching guidance from your AI agent. Use judgment and adjust based on how you feel._`;\n\nreturn [{\n  json: {\n    source_activity_id: workout.source_activity_id,\n    slack_text: slackText,\n    ai_summary: aiOutput\n  }\n}];"
+      },
+      "id": "REDACTED",
+      "name": "Format Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO coach_recommendations (source_activity_id, summary, trend_analysis, next_workout_recommendation, risk_flags, slack_message)\nVALUES (\n  '{{ $json.source_activity_id }}',\n  '{{ $json.ai_summary.replaceAll(\"'\", \"''\") }}',\n  NULL,\n  NULL,\n  NULL,\n  '{{ $json.slack_text.replaceAll(\"'\", \"''\") }}'\n);",
+        "options": {}
+      },
+      "id": "REDACTED",
+      "name": "Postgres - Save Recommendation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1776,
+        1344
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": "REDACTED",
+        "text": "={{ $node[\"Format Slack Message\"].json.slack_text }}",
+        "otherOptions": {}
+      },
+      "id": "REDACTED",
+      "name": "Slack - Send Coach Message",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        2000,
+        1344
+      ],
+      "webhookId": "REDACTED",
+      "credentials": {
+        "slackApi": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "qwen2.5-coder:3b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        1568
+      ],
+      "id": "REDACTED",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "event": "create",
+        "options": {
+          "deleteIfExist": true
+        }
+      },
+      "type": "n8n-nodes-base.stravaTrigger",
+      "typeVersion": 1,
+      "position": [
+        896,
+        1120
+      ],
+      "id": "REDACTED",
+      "name": "Strava Trigger",
+      "webhookId": "REDACTED",
+      "credentials": {
+        "stravaOAuth2Api": {
+          "id": "REDACTED",
+          "name": "REDACTED"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Clean Workout Data": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Upsert Workout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Upsert Workout": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Last 28 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Last 28 Days": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Similar Workouts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Similar Workouts": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Tomorrow Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Tomorrow Plan": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Coach Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Coach Context": {
+      "main": [
+        [
+          {
+            "node": "AI Coach Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Coach Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Slack Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slack Message": {
+      "main": [
+        [
+          {
+            "node": "Postgres - Save Recommendation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres - Save Recommendation": {
+      "main": [
+        [
+          {
+            "node": "Slack - Send Coach Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Coach Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Strava Trigger": {
+      "main": [
+        [
+          {
+            "node": "Clean Workout Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "REDACTED",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "REDACTED"
+  },
+  "id": "REDACTED",
+  "tags": []
+}
